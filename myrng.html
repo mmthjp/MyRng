@@ -59,6 +59,21 @@ body{
 .car-switcher{
   padding:14px 18px;
   border-bottom:1px solid var(--border);
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+.car-switcher .car-select-wrap{flex:1;}
+.add-car-btn{
+  flex:0 0 auto;
+  width:48px;height:48px;
+  border-radius:14px;
+  background:var(--amber-dim);
+  border:1px solid var(--amber);
+  color:var(--amber);
+  font-size:22px;
+  font-weight:700;
+  cursor:pointer;
 }
 .car-select-wrap{position:relative;}
 .car-select{
@@ -287,7 +302,23 @@ body{
   transition:max-height .25s ease;
   margin-bottom:14px;
 }
-.add-panel.open{max-height:600px;}
+.add-panel.open{max-height:900px;}
+.empty-state{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:36px 20px;
+  text-align:center;
+  margin-bottom:14px;
+}
+.empty-state .empty-icon{
+  width:56px;height:56px;
+  border-radius:16px;
+  background:var(--surface-2);
+  display:flex;align-items:center;justify-content:center;
+  margin:0 auto 14px;
+}
+.empty-state p{color:var(--muted);font-size:13.5px;margin-bottom:16px;}
 .add-panel-inner{
   background:var(--surface);
   border:1px solid var(--border);
@@ -374,11 +405,7 @@ body{
     <p>تتبع سياراتك وصيانتها بمكان واحد</p>
   </div>
 
-  <div class="car-switcher">
-    <div class="car-select-wrap">
-      <select class="car-select" id="carSelect"></select>
-    </div>
-  </div>
+  <div class="car-switcher" id="carSwitcherBar"></div>
 
   <div class="content">
     <div class="section active" id="section-car"></div>
@@ -399,44 +426,7 @@ body{
 </div>
 
 <script>
-const cars = [
-  {
-    id:1, name:"تويوتا كامري 2022", plate:"أ ب ج 1234",
-    color:"أبيض لؤلؤي", vin:"JTNBE46K...", mileage: 45230,
-    parts:[
-      {name:"زيت المكينة وفلتره", ref:"OIL-0001", icon:"drop", lastDate:"2026-05-10", lastMileage:40230, lifeKm:10000, lifeMonths:6},
-      {name:"فلتر الهواء", ref:"AIR-0002", icon:"filter", lastDate:"2026-02-01", lastMileage:35000, lifeKm:20000, lifeMonths:12},
-      {name:"الكفرات", ref:"TIRE-0003", icon:"tire", lastDate:"2025-01-15", lastMileage:15000, lifeKm:60000, lifeMonths:36},
-      {name:"البطارية", ref:"BAT-0004", icon:"battery", lastDate:"2024-11-01", lastMileage:5000, lifeKm:null, lifeMonths:24},
-      {name:"تيل الفرامل", ref:"BRK-0005", icon:"brake", lastDate:"2026-04-01", lastMileage:38500, lifeKm:30000, lifeMonths:18},
-      {name:"مويّة الرديتر", ref:"CLNT-0006", icon:"coolant", lastDate:"2025-03-01", lastMileage:20000, lifeKm:null, lifeMonths:24},
-    ]
-  },
-  {
-    id:2, name:"هيونداي سوناتا 2020", plate:"د هـ و 5678",
-    color:"رمادي", vin:"KMHL14J...", mileage: 78900,
-    parts:[
-      {name:"زيت المكينة وفلتره", ref:"OIL-0011", icon:"drop", lastDate:"2026-06-20", lastMileage:75000, lifeKm:10000, lifeMonths:6},
-      {name:"فلتر الهواء", ref:"AIR-0012", icon:"filter", lastDate:"2025-09-01", lastMileage:60000, lifeKm:20000, lifeMonths:12},
-      {name:"الكفرات", ref:"TIRE-0013", icon:"tire", lastDate:"2023-01-01", lastMileage:20000, lifeKm:60000, lifeMonths:36},
-      {name:"البطارية", ref:"BAT-0014", icon:"battery", lastDate:"2024-01-01", lastMileage:45000, lifeKm:null, lifeMonths:24},
-      {name:"تيل الفرامل", ref:"BRK-0015", icon:"brake", lastDate:"2026-01-10", lastMileage:70000, lifeKm:30000, lifeMonths:18},
-      {name:"مويّة الرديتر", ref:"CLNT-0016", icon:"coolant", lastDate:"2024-06-01", lastMileage:50000, lifeKm:null, lifeMonths:24},
-    ]
-  },
-  {
-    id:3, name:"لكزس ES 2023", plate:"ز ح ط 9012",
-    color:"أسود", vin:"JTHBK1EG...", mileage: 12040,
-    parts:[
-      {name:"زيت المكينة وفلتره", ref:"OIL-0021", icon:"drop", lastDate:"2026-06-01", lastMileage:10000, lifeKm:10000, lifeMonths:6},
-      {name:"فلتر الهواء", ref:"AIR-0022", icon:"filter", lastDate:"2026-01-01", lastMileage:5000, lifeKm:20000, lifeMonths:12},
-      {name:"الكفرات", ref:"TIRE-0023", icon:"tire", lastDate:"2025-07-01", lastMileage:2000, lifeKm:60000, lifeMonths:36},
-      {name:"البطارية", ref:"BAT-0024", icon:"battery", lastDate:"2025-07-01", lastMileage:2000, lifeKm:null, lifeMonths:24},
-      {name:"تيل الفرامل", ref:"BRK-0025", icon:"brake", lastDate:"2026-06-01", lastMileage:10000, lifeKm:30000, lifeMonths:18},
-      {name:"مويّة الرديتر", ref:"CLNT-0026", icon:"coolant", lastDate:"2025-07-01", lastMileage:2000, lifeKm:null, lifeMonths:24},
-    ]
-  },
-];
+const cars = [];
 
 const TODAY = '2026-07-17';
 
@@ -460,10 +450,11 @@ const partsCatalog = [
   {id:'wheel_bearing', name:'طقم البلي', icon:'bearing', lifeKm:130000, lifeMonths:null},
 ];
 
-let activeCarId = cars[0].id;
+let activeCarId = null;
 let activeTab = 'car';
 let expandedParts = new Set();
 let addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:''};
+let addCar = {open:false, mode:'manual', name:'', modelYear:'', color:'', vin:'', plate:'', mileage:'', purchaseDate:'', condition:'new', formImageLoaded:false};
 
 const icons = {
   drop:'<path d="M12 2s7 8.5 7 13a7 7 0 11-14 0c0-4.5 7-13 7-13z"/>',
@@ -513,14 +504,34 @@ function statusFromPct(pct){
 function fmt(n){ return n.toLocaleString('en-US'); }
 
 function renderSwitcher(){
+  const bar = document.getElementById('carSwitcherBar');
+  if(cars.length===0){ bar.innerHTML=''; return; }
+  bar.innerHTML = `
+    <div class="car-select-wrap">
+      <select class="car-select" id="carSelect"></select>
+    </div>
+    <button class="add-car-btn" onclick="toggleAddCar()">+</button>`;
   const el = document.getElementById('carSelect');
   el.innerHTML = cars.map(c=>`<option value="${c.id}" ${c.id===activeCarId?'selected':''}>${c.name} — ${c.plate}</option>`).join('');
+  el.addEventListener('change', (e)=>selectCar(Number(e.target.value)));
 }
 
 function renderCarSection(){
   const car = cars.find(c=>c.id===activeCarId);
   const el = document.getElementById('section-car');
-  el.innerHTML = `
+
+  let html = '';
+  if(cars.length===0){
+    html += `
+    <div class="empty-state">
+      <div class="empty-icon">${svgIcon('tire','#8B93A1')}</div>
+      <p>ما عندك سيارات مضافة بعد</p>
+      <button class="add-part-btn" onclick="toggleAddCar()">${addCar.open?'✕ إغلاق':'+ ضيف سيارتك'}</button>
+    </div>`;
+  }
+  html += renderAddCarPanel();
+  if(car){
+    html += `
     <div class="car-card">
       <div class="car-card-top">
         <div>
@@ -534,15 +545,142 @@ function renderCarSection(){
         <span class="value">${fmt(car.mileage)} كم</span>
       </div>
       <div class="info-grid">
-        <div class="info-item"><div class="k">رقم الهيكل</div><div class="v">${car.vin}</div></div>
+        <div class="info-item"><div class="k">رقم الهيكل</div><div class="v">${car.vin || '—'}</div></div>
         <div class="info-item"><div class="k">عدد القطع المتابَعة</div><div class="v">${car.parts.length} قطع</div></div>
+        <div class="info-item"><div class="k">تاريخ الشراء</div><div class="v">${car.purchaseDate || '—'}</div></div>
+        <div class="info-item"><div class="k">الحالة عند الشراء</div><div class="v">${car.condition==='used'?'مستعملة':'جديدة'}</div></div>
       </div>
     </div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderAddCarPanel(){
+  return `
+    <div class="add-panel ${addCar.open?'open':''}">
+      <div class="add-panel-inner">
+        <div class="mode-toggle">
+          <button class="mode-btn ${addCar.mode==='manual'?'active':''}" onclick="setAddCarMode('manual')">يدوي</button>
+          <button class="mode-btn ${addCar.mode==='form'?'active':''}" onclick="setAddCarMode('form')">عن طريق الاستمارة</button>
+        </div>
+
+        ${addCar.mode==='form' ? `
+        <div class="field-group">
+          <label class="field-label">صورة الاستمارة</label>
+          <input class="field-input" type="file" accept="image/*" onchange="handleFormImage(this)">
+          ${addCar.formImageLoaded ? '<div class="form-hint">✓ تم تعبئة البيانات من الاستمارة، راجعها وعدّل اللي يحتاج تعديل</div>' : ''}
+        </div>` : ''}
+
+        <div class="field-group">
+          <label class="field-label">اسم السيارة (الماركة والطراز)</label>
+          <input class="field-input" type="text" value="${addCar.name}" oninput="updateAddCarField('name', this.value)" placeholder="مثال: تويوتا كامري">
+        </div>
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">الموديل (سنة الصنع)</label>
+            <input class="field-input" type="number" value="${addCar.modelYear}" oninput="updateAddCarField('modelYear', this.value)" placeholder="2024">
+          </div>
+          <div class="field-group">
+            <label class="field-label">اللون</label>
+            <input class="field-input" type="text" value="${addCar.color}" oninput="updateAddCarField('color', this.value)" placeholder="أسود">
+          </div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">رقم الهيكل</label>
+          <input class="field-input" type="text" value="${addCar.vin}" oninput="updateAddCarField('vin', this.value)" placeholder="VIN">
+        </div>
+        <div class="field-group">
+          <label class="field-label">رقم اللوحة</label>
+          <input class="field-input" type="text" value="${addCar.plate}" oninput="updateAddCarField('plate', this.value)" placeholder="أ ب ج 1234">
+        </div>
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">الممشى الحالي (كم)</label>
+            <input class="field-input" type="number" value="${addCar.mileage}" oninput="updateAddCarField('mileage', this.value)" placeholder="0">
+          </div>
+          <div class="field-group">
+            <label class="field-label">تاريخ الشراء</label>
+            <input class="field-input" type="date" value="${addCar.purchaseDate}" oninput="updateAddCarField('purchaseDate', this.value)">
+          </div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">حالة السيارة عند الشراء</label>
+          <div class="mode-toggle">
+            <button class="mode-btn ${addCar.condition==='new'?'active':''}" onclick="setCondition('new')">جديدة</button>
+            <button class="mode-btn ${addCar.condition==='used'?'active':''}" onclick="setCondition('used')">مستعملة</button>
+          </div>
+        </div>
+        <button class="confirm-btn" onclick="confirmAddCar()">إضافة السيارة</button>
+      </div>
+    </div>`;
+}
+
+function setAddCarMode(mode){
+  addCar.mode = mode;
+  renderCarSection();
+}
+
+function setCondition(cond){
+  addCar.condition = cond;
+  renderCarSection();
+}
+
+function updateAddCarField(field, value){
+  addCar[field] = value;
+}
+
+function handleFormImage(input){
+  if(!input.files || !input.files.length) return;
+  // معاينة تجريبية: القراءة الفعلية من الصورة تُفعّل لما نربط الـ API لاحقًا
+  addCar.formImageLoaded = true;
+  addCar.name = 'فولكس واجن تيرامونت';
+  addCar.modelYear = '2024';
+  addCar.color = 'أسود';
+  addCar.vin = 'WVGCD1CA9RC542233';
+  addCar.plate = '٨٩٦٥ ب د ي';
+  renderCarSection();
+}
+
+function toggleAddCar(){
+  addCar.open = !addCar.open;
+  if(addCar.open){
+    addCar.mode='manual'; addCar.name=''; addCar.modelYear=''; addCar.color=''; addCar.vin='';
+    addCar.plate=''; addCar.mileage=''; addCar.purchaseDate=''; addCar.condition='new'; addCar.formImageLoaded=false;
+  }
+  renderCarSection();
+}
+
+function confirmAddCar(){
+  if(!addCar.name.trim() || !addCar.plate.trim()){
+    alert('لازم اسم السيارة ورقم اللوحة على الأقل');
+    return;
+  }
+  const newId = Date.now();
+  cars.push({
+    id:newId,
+    name: addCar.modelYear ? `${addCar.name.trim()} ${addCar.modelYear}` : addCar.name.trim(),
+    plate: addCar.plate.trim(),
+    color: addCar.color.trim() || '—',
+    vin: addCar.vin.trim(),
+    mileage: Number(addCar.mileage)||0,
+    purchaseDate: addCar.purchaseDate || null,
+    condition: addCar.condition,
+    parts: []
+  });
+  activeCarId = newId;
+  addCar = {open:false, mode:'manual', name:'', modelYear:'', color:'', vin:'', plate:'', mileage:'', purchaseDate:'', condition:'new', formImageLoaded:false};
+  renderSwitcher();
+  renderCarSection();
+  renderMaintenanceSection();
 }
 
 function renderMaintenanceSection(){
   const car = cars.find(c=>c.id===activeCarId);
   const el = document.getElementById('section-maintenance');
+  if(!car){
+    el.innerHTML = `<div class="empty-state"><p>ضيف سيارة أول من تبويب "سيارتي" عشان تقدر تتابع صيانتها</p></div>`;
+    return;
+  }
 
   let ok=0,warn=0,due=0;
   const cards = car.parts.map(p=>{
@@ -690,6 +828,7 @@ function selectCar(id){
   activeCarId = id;
   expandedParts = new Set();
   addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:''};
+  addCar.open = false;
   renderSwitcher();
   renderCarSection();
   renderMaintenanceSection();
@@ -705,7 +844,6 @@ function selectTab(tab){
 document.querySelectorAll('.nav-btn').forEach(b=>{
   b.addEventListener('click', ()=>selectTab(b.dataset.tab));
 });
-document.getElementById('carSelect').addEventListener('change', (e)=>selectCar(Number(e.target.value)));
 
 renderSwitcher();
 renderCarSection();
