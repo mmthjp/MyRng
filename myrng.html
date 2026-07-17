@@ -395,14 +395,72 @@ body{
 }
 .nav-btn.active{color:var(--amber);background:var(--amber-dim);}
 .nav-btn span{font-size:12px;font-weight:700;font-family:'Tajawal',sans-serif;}
+
+/* Auth */
+.logout-btn{
+  flex:0 0 auto;
+  padding:8px 14px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:var(--surface);
+  color:var(--muted);
+  font-family:'Tajawal',sans-serif;
+  font-size:12.5px;
+  font-weight:700;
+  cursor:pointer;
+}
+.auth-wrap{
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  padding:28px 22px;
+}
+.auth-title{
+  font-family:'Almarai',sans-serif;
+  font-weight:800;
+  font-size:24px;
+  text-align:center;
+  margin-bottom:4px;
+}
+.auth-sub{
+  color:var(--muted);
+  font-size:13px;
+  text-align:center;
+  margin-bottom:26px;
+}
+.auth-card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:20px;
+}
+.auth-error{
+  background:#E4614F1a;
+  border:1px solid #E4614F55;
+  color:var(--red);
+  font-size:12.5px;
+  padding:10px 12px;
+  border-radius:10px;
+  margin-bottom:14px;
+}
 </style>
 </head>
 <body>
 <div class="app">
 
+  <div id="authScreen"></div>
+
+  <div id="appShell" style="display:none">
+
   <div class="header">
-    <h1>سياراتي</h1>
-    <p>تتبع سياراتك وصيانتها بمكان واحد</p>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+      <div>
+        <h1>سياراتي</h1>
+        <p>تتبع سياراتك وصيانتها بمكان واحد</p>
+      </div>
+      <button class="logout-btn" onclick="logout()">خروج</button>
+    </div>
   </div>
 
   <div class="car-switcher" id="carSwitcherBar"></div>
@@ -423,10 +481,15 @@ body{
     </div>
   </div>
 
+  </div>
+
 </div>
 
 <script>
-const cars = [];
+let cars = [];
+const users = {}; // { phone: { password, cars: [] } }
+let currentUser = null;
+let auth = {mode:'login', phone:'', password:'', error:''};
 
 const TODAY = '2026-07-17';
 
@@ -502,6 +565,100 @@ function statusFromPct(pct){
 }
 
 function fmt(n){ return n.toLocaleString('en-US'); }
+
+function toEnglishDigits(str){
+  const ar = '٠١٢٣٤٥٦٧٨٩';
+  return str.replace(/[٠-٩]/g, d => ar.indexOf(d)).replace(/[^0-9]/g,'');
+}
+
+function renderAuthScreen(){
+  const el = document.getElementById('authScreen');
+  const isLogin = auth.mode==='login';
+  el.innerHTML = `
+    <div class="auth-wrap">
+      <div class="auth-title">سياراتي</div>
+      <div class="auth-sub">تتبع سياراتك وصيانتها بمكان واحد</div>
+      <div class="auth-card">
+        <div class="mode-toggle">
+          <button class="mode-btn ${isLogin?'active':''}" onclick="setAuthMode('login')">تسجيل الدخول</button>
+          <button class="mode-btn ${!isLogin?'active':''}" onclick="setAuthMode('signup')">حساب جديد</button>
+        </div>
+        ${auth.error ? `<div class="auth-error">${auth.error}</div>` : ''}
+        <div class="field-group">
+          <label class="field-label">رقم الجوال</label>
+          <input class="field-input" type="tel" value="${auth.phone}" oninput="updateAuthField('phone', this.value)" placeholder="0505350000" maxlength="10">
+        </div>
+        <div class="field-group">
+          <label class="field-label">الرمز (5 أرقام)</label>
+          <input class="field-input" type="password" inputmode="numeric" value="${auth.password}" oninput="updateAuthField('password', this.value)" placeholder="•••••" maxlength="5">
+        </div>
+        <button class="confirm-btn" onclick="submitAuth()">${isLogin?'دخول':'إنشاء حساب'}</button>
+        <div class="form-hint">الرمز 5 أرقام، وما يكون متسلسل زي 12345 أو 54321</div>
+      </div>
+    </div>`;
+}
+
+function setAuthMode(mode){
+  auth.mode = mode;
+  auth.error = '';
+  renderAuthScreen();
+}
+
+function updateAuthField(field, value){
+  auth[field] = toEnglishDigits(value);
+}
+
+function submitAuth(){
+  const phone = auth.phone;
+  const password = auth.password;
+
+  if(phone.length!==10 || !phone.startsWith('05')){
+    auth.error = 'رقم الجوال لازم يكون 10 أرقام ويبدأ بـ 05';
+    renderAuthScreen(); return;
+  }
+  if(password.length!==5){
+    auth.error = 'الرمز لازم يكون 5 أرقام بالضبط';
+    renderAuthScreen(); return;
+  }
+  if(password==='12345' || password==='54321'){
+    auth.error = 'ما تقدر تستخدم رمز متسلسل زي 12345 أو 54321';
+    renderAuthScreen(); return;
+  }
+
+  if(auth.mode==='signup'){
+    if(users[phone]){
+      auth.error = 'رقم الجوال مسجل من قبل، سجل دخول بدل ما تنشئ حساب';
+      renderAuthScreen(); return;
+    }
+    users[phone] = {password, cars:[]};
+  } else {
+    const user = users[phone];
+    if(!user || user.password!==password){
+      auth.error = 'رقم الجوال أو الرمز غير صحيح';
+      renderAuthScreen(); return;
+    }
+  }
+
+  currentUser = phone;
+  cars = users[phone].cars;
+  activeCarId = cars.length ? cars[0].id : null;
+  auth = {mode:'login', phone:'', password:'', error:''};
+
+  document.getElementById('authScreen').style.display = 'none';
+  document.getElementById('appShell').style.display = 'block';
+  renderSwitcher();
+  renderCarSection();
+  renderMaintenanceSection();
+}
+
+function logout(){
+  currentUser = null;
+  cars = [];
+  activeCarId = null;
+  document.getElementById('appShell').style.display = 'none';
+  document.getElementById('authScreen').style.display = 'block';
+  renderAuthScreen();
+}
 
 function renderSwitcher(){
   const bar = document.getElementById('carSwitcherBar');
@@ -845,9 +1002,7 @@ document.querySelectorAll('.nav-btn').forEach(b=>{
   b.addEventListener('click', ()=>selectTab(b.dataset.tab));
 });
 
-renderSwitcher();
-renderCarSection();
-renderMaintenanceSection();
+renderAuthScreen();
 </script>
 </body>
 </html>
