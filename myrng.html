@@ -546,6 +546,28 @@ const users = {}; // { phone: { password, cars: [] } }
 let currentUser = null;
 let auth = {mode:'login', phone:'', password:'', error:''};
 
+const STORAGE_KEY = 'car_app_users_v1';
+const SESSION_KEY = 'car_app_session_v1';
+
+function loadFromStorage(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw) Object.assign(users, JSON.parse(raw));
+  }catch(e){ console.error('تعذر تحميل البيانات المحفوظة', e); }
+}
+
+function persistUsers(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(users)); }
+  catch(e){ console.error('تعذر حفظ البيانات', e); }
+}
+
+function persistSession(phone){
+  try{
+    if(phone) localStorage.setItem(SESSION_KEY, phone);
+    else localStorage.removeItem(SESSION_KEY);
+  }catch(e){ console.error('تعذر حفظ الجلسة', e); }
+}
+
 const TODAY = '2026-07-17';
 
 const partsCatalog = [
@@ -703,6 +725,8 @@ function submitAuth(){
   cars = users[phone].cars;
   activeCarId = cars.length ? cars[0].id : null;
   auth = {mode:'login', phone:'', password:'', error:''};
+  persistUsers();
+  persistSession(phone);
 
   document.getElementById('authScreen').style.display = 'none';
   document.getElementById('appShell').style.display = 'block';
@@ -715,6 +739,7 @@ function logout(){
   currentUser = null;
   cars = [];
   activeCarId = null;
+  persistSession(null);
   document.getElementById('appShell').style.display = 'none';
   document.getElementById('authScreen').style.display = 'block';
   renderAuthScreen();
@@ -886,6 +911,7 @@ function confirmAddCar(){
   });
   activeCarId = newId;
   addCar = {open:false, mode:'manual', name:'', modelYear:'', color:'', vin:'', plate:'', mileage:'', purchaseDate:'', condition:'new', formImageLoaded:false};
+  persistUsers();
   renderSwitcher();
   renderCarSection();
   renderMaintenanceSection();
@@ -1061,6 +1087,7 @@ function confirmAddPart(){
 
   car.parts.push({name, ref, icon, lastDate:TODAY, lastMileage:car.mileage, lifeKm, lifeMonths});
   addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:''};
+  persistUsers();
   renderMaintenanceSection();
 }
 
@@ -1116,6 +1143,7 @@ function saveEditPart(){
   p.lifeMonths = months;
   p.lifeKm = null;
   editingPartRef = null;
+  persistUsers();
   renderMaintenanceSection();
 }
 
@@ -1131,6 +1159,7 @@ function deletePart(ref, evt){
   if(editingPartRef===ref) editingPartRef=null;
   expandedParts.delete(ref);
   pendingDelete = {carId:car.id, part:removed, index:idx};
+  persistUsers();
   renderMaintenanceSection();
   showUndoBar(removed.name);
   pendingDelete.timeoutId = setTimeout(()=>{ pendingDelete=null; hideUndoBar(); }, 15000);
@@ -1145,6 +1174,7 @@ function undoDeletePart(){
     car.parts.splice(idx,0,pendingDelete.part);
   }
   pendingDelete = null;
+  persistUsers();
   hideUndoBar();
   renderMaintenanceSection();
 }
@@ -1197,7 +1227,23 @@ document.querySelectorAll('.nav-btn').forEach(b=>{
   b.addEventListener('click', ()=>selectTab(b.dataset.tab));
 });
 
-renderAuthScreen();
+loadFromStorage();
+(function(){
+  let savedPhone = null;
+  try{ savedPhone = localStorage.getItem(SESSION_KEY); }catch(e){}
+  if(savedPhone && users[savedPhone]){
+    currentUser = savedPhone;
+    cars = users[savedPhone].cars;
+    activeCarId = cars.length ? cars[0].id : null;
+    document.getElementById('authScreen').style.display = 'none';
+    document.getElementById('appShell').style.display = 'block';
+    renderSwitcher();
+    renderCarSection();
+    renderMaintenanceSection();
+  } else {
+    renderAuthScreen();
+  }
+})();
 </script>
 </body>
 </html>
