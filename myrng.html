@@ -588,10 +588,10 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let cars = [];
 let currentUser = null;
-let auth = {mode:'login', phone:'', password:'', error:'', loading:false};
+let auth = {mode:'login', phone:'', password:'', confirmPassword:'', error:'', loading:false};
 
-function toE164(localPhone){
-  return '+966' + localPhone.slice(1);
+function phoneToEmail(localPhone){
+  return localPhone + '@myrng.app';
 }
 
 const TODAY = '2026-07-17';
@@ -724,13 +724,18 @@ function renderAuthScreen(){
         </div>
         ${auth.error ? `<div class="auth-error">${auth.error}</div>` : ''}
         <div class="field-group">
-          <label class="field-label">رقم الجوال</label>
-          <input class="field-input" type="tel" value="${auth.phone}" oninput="updateAuthField('phone', this.value)" placeholder="0505350000" maxlength="10">
+          <label class="field-label">اسم المستخدم (رقم الجوال)</label>
+          <input class="field-input" type="tel" inputmode="numeric" value="${auth.phone}" oninput="updateAuthField('phone', this.value)" placeholder="0505350000" maxlength="10">
         </div>
         <div class="field-group">
           <label class="field-label">الرمز (6 أرقام)</label>
           <input class="field-input" type="password" inputmode="numeric" value="${auth.password}" oninput="updateAuthField('password', this.value)" placeholder="••••••" maxlength="6">
         </div>
+        ${!isLogin ? `
+        <div class="field-group">
+          <label class="field-label">تأكيد الرمز</label>
+          <input class="field-input" type="password" inputmode="numeric" value="${auth.confirmPassword}" oninput="updateAuthField('confirmPassword', this.value)" placeholder="••••••" maxlength="6">
+        </div>` : ''}
         <button class="confirm-btn" onclick="submitAuth()" ${auth.loading?'disabled':''}>${auth.loading ? 'جاري التحقق...' : (isLogin?'دخول':'إنشاء حساب')}</button>
         <div class="form-hint">الرمز 6 أرقام، وما يكون متسلسل زي 123456 أو 654321</div>
       </div>
@@ -749,9 +754,10 @@ function updateAuthField(field, value){
 }
 
 function translateAuthError(msg){
-  if(/Invalid login credentials/i.test(msg)) return 'رقم الجوال أو الرمز غير صحيح';
-  if(/already registered|already exists/i.test(msg)) return 'رقم الجوال مسجل من قبل، سجل دخول بدل ما تنشئ حساب';
+  if(/Invalid login credentials/i.test(msg)) return 'اسم المستخدم أو الرمز غير صحيح';
+  if(/already registered|already exists/i.test(msg)) return 'اسم المستخدم مسجل من قبل، سجل دخول بدل ما تنشئ حساب';
   if(/Password should be at least/i.test(msg)) return 'الرمز قصير حسب إعدادات الحساب';
+  if(/Email not confirmed/i.test(msg)) return 'لازم تعطّل "Confirm email" من إعدادات Supabase (Authentication → Providers → Email)';
   if(/rate limit/i.test(msg)) return 'محاولات كثيرة، جرب بعد شوي';
   return msg;
 }
@@ -761,7 +767,7 @@ async function submitAuth(){
   const password = auth.password;
 
   if(localPhone.length!==10 || !localPhone.startsWith('05')){
-    auth.error = 'رقم الجوال لازم يكون 10 أرقام ويبدأ بـ 05';
+    auth.error = 'اسم المستخدم لازم يكون رقم جوال 10 أرقام ويبدأ بـ 05';
     renderAuthScreen(); return;
   }
   if(password.length!==6){
@@ -772,15 +778,19 @@ async function submitAuth(){
     auth.error = 'ما تقدر تستخدم رمز متسلسل زي 123456 أو 654321';
     renderAuthScreen(); return;
   }
+  if(auth.mode==='signup' && password!==auth.confirmPassword){
+    auth.error = 'تأكيد الرمز مو مطابق';
+    renderAuthScreen(); return;
+  }
 
-  const phone = toE164(localPhone);
+  const email = phoneToEmail(localPhone);
   auth.error = '';
   auth.loading = true;
   renderAuthScreen();
 
   const result = auth.mode==='signup'
-    ? await sb.auth.signUp({ phone, password })
-    : await sb.auth.signInWithPassword({ phone, password });
+    ? await sb.auth.signUp({ email, password, options:{ data:{ phone:localPhone } } })
+    : await sb.auth.signInWithPassword({ email, password });
 
   auth.loading = false;
 
@@ -791,7 +801,7 @@ async function submitAuth(){
   }
 
   currentUser = result.data.user;
-  auth = {mode:'login', phone:'', password:'', error:'', loading:false};
+  auth = {mode:'login', phone:'', password:'', confirmPassword:'', error:'', loading:false};
 
   document.getElementById('authScreen').style.display = 'none';
   document.getElementById('appShell').style.display = 'block';
