@@ -540,32 +540,19 @@ body{
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+const SUPABASE_URL = 'https://vqeicxbqewtukwuxowbs.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_A0DXfpHFUu-9XZxaqX3mIw_7JK9G65Q';
+const { createClient } = window.supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 let cars = [];
-const users = {}; // { phone: { password, cars: [] } }
 let currentUser = null;
-let auth = {mode:'login', phone:'', password:'', error:''};
+let auth = {mode:'login', phone:'', password:'', error:'', loading:false};
 
-const STORAGE_KEY = 'car_app_users_v1';
-const SESSION_KEY = 'car_app_session_v1';
-
-function loadFromStorage(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw) Object.assign(users, JSON.parse(raw));
-  }catch(e){ console.error('تعذر تحميل البيانات المحفوظة', e); }
-}
-
-function persistUsers(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(users)); }
-  catch(e){ console.error('تعذر حفظ البيانات', e); }
-}
-
-function persistSession(phone){
-  try{
-    if(phone) localStorage.setItem(SESSION_KEY, phone);
-    else localStorage.removeItem(SESSION_KEY);
-  }catch(e){ console.error('تعذر حفظ الجلسة', e); }
+function toE164(localPhone){
+  return '+966' + localPhone.slice(1);
 }
 
 const TODAY = '2026-07-17';
@@ -594,7 +581,7 @@ let activeCarId = null;
 let activeTab = 'car';
 let expandedParts = new Set();
 let addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
-let editingPartRef = null;
+let editingPartId = null;
 let editForm = {name:'', lastDate:'', nextDate:''};
 let pendingDelete = null;
 let addCar = {open:false, mode:'manual', name:'', modelYear:'', color:'', vin:'', plate:'', mileage:'', purchaseDate:'', condition:'new', formImageLoaded:false};
@@ -672,11 +659,11 @@ function renderAuthScreen(){
           <input class="field-input" type="tel" value="${auth.phone}" oninput="updateAuthField('phone', this.value)" placeholder="0505350000" maxlength="10">
         </div>
         <div class="field-group">
-          <label class="field-label">الرمز (5 أرقام)</label>
-          <input class="field-input" type="password" inputmode="numeric" value="${auth.password}" oninput="updateAuthField('password', this.value)" placeholder="•••••" maxlength="5">
+          <label class="field-label">الرمز (6 أرقام)</label>
+          <input class="field-input" type="password" inputmode="numeric" value="${auth.password}" oninput="updateAuthField('password', this.value)" placeholder="••••••" maxlength="6">
         </div>
-        <button class="confirm-btn" onclick="submitAuth()">${isLogin?'دخول':'إنشاء حساب'}</button>
-        <div class="form-hint">الرمز 5 أرقام، وما يكون متسلسل زي 12345 أو 54321</div>
+        <button class="confirm-btn" onclick="submitAuth()" ${auth.loading?'disabled':''}>${auth.loading ? 'جاري التحقق...' : (isLogin?'دخول':'إنشاء حساب')}</button>
+        <div class="form-hint">الرمز 6 أرقام، وما يكون متسلسل زي 123456 أو 654321</div>
       </div>
     </div>`;
 }
@@ -691,59 +678,98 @@ function updateAuthField(field, value){
   auth[field] = toEnglishDigits(value);
 }
 
-function submitAuth(){
-  const phone = auth.phone;
+function translateAuthError(msg){
+  if(/Invalid login credentials/i.test(msg)) return 'رقم الجوال أو الرمز غير صحيح';
+  if(/already registered|already exists/i.test(msg)) return 'رقم الجوال مسجل من قبل، سجل دخول بدل ما تنشئ حساب';
+  if(/Password should be at least/i.test(msg)) return 'الرمز قصير حسب إعدادات الحساب';
+  if(/rate limit/i.test(msg)) return 'محاولات كثيرة، جرب بعد شوي';
+  return msg;
+}
+
+async function submitAuth(){
+  const localPhone = auth.phone;
   const password = auth.password;
 
-  if(phone.length!==10 || !phone.startsWith('05')){
+  if(localPhone.length!==10 || !localPhone.startsWith('05')){
     auth.error = 'رقم الجوال لازم يكون 10 أرقام ويبدأ بـ 05';
     renderAuthScreen(); return;
   }
-  if(password.length!==5){
-    auth.error = 'الرمز لازم يكون 5 أرقام بالضبط';
+  if(password.length!==6){
+    auth.error = 'الرمز لازم يكون 6 أرقام بالضبط';
     renderAuthScreen(); return;
   }
-  if(password==='12345' || password==='54321'){
-    auth.error = 'ما تقدر تستخدم رمز متسلسل زي 12345 أو 54321';
+  if(password==='123456' || password==='654321'){
+    auth.error = 'ما تقدر تستخدم رمز متسلسل زي 123456 أو 654321';
     renderAuthScreen(); return;
   }
 
-  if(auth.mode==='signup'){
-    if(users[phone]){
-      auth.error = 'رقم الجوال مسجل من قبل، سجل دخول بدل ما تنشئ حساب';
-      renderAuthScreen(); return;
-    }
-    users[phone] = {password, cars:[]};
-  } else {
-    const user = users[phone];
-    if(!user || user.password!==password){
-      auth.error = 'رقم الجوال أو الرمز غير صحيح';
-      renderAuthScreen(); return;
-    }
+  const phone = toE164(localPhone);
+  auth.error = '';
+  auth.loading = true;
+  renderAuthScreen();
+
+  const result = auth.mode==='signup'
+    ? await sb.auth.signUp({ phone, password })
+    : await sb.auth.signInWithPassword({ phone, password });
+
+  auth.loading = false;
+
+  if(result.error){
+    auth.error = translateAuthError(result.error.message);
+    renderAuthScreen();
+    return;
   }
 
-  currentUser = phone;
-  cars = users[phone].cars;
-  activeCarId = cars.length ? cars[0].id : null;
-  auth = {mode:'login', phone:'', password:'', error:''};
-  persistUsers();
-  persistSession(phone);
+  currentUser = result.data.user;
+  auth = {mode:'login', phone:'', password:'', error:'', loading:false};
 
   document.getElementById('authScreen').style.display = 'none';
   document.getElementById('appShell').style.display = 'block';
-  renderSwitcher();
-  renderCarSection();
-  renderMaintenanceSection();
+  await loadCarsFromDB();
 }
 
-function logout(){
+async function logout(){
+  await sb.auth.signOut();
   currentUser = null;
   cars = [];
   activeCarId = null;
-  persistSession(null);
   document.getElementById('appShell').style.display = 'none';
   document.getElementById('authScreen').style.display = 'block';
   renderAuthScreen();
+}
+
+async function loadCarsFromDB(){
+  const { data, error } = await sb.from('cars').select('*, parts(*)').order('created_at', {ascending:true});
+  if(error){
+    console.error('تعذر تحميل السيارات', error);
+    cars = [];
+  } else {
+    cars = (data||[]).map(row => ({
+      id: row.id,
+      name: row.name,
+      plate: row.plate,
+      color: row.color,
+      vin: row.vin,
+      mileage: row.mileage || 0,
+      purchaseDate: row.purchase_date,
+      condition: row.condition,
+      parts: (row.parts||[]).map(p => ({
+        id: p.id,
+        name: p.name,
+        ref: p.ref,
+        icon: p.icon,
+        periodic: p.periodic,
+        lastDate: p.last_date,
+        lastMileage: p.last_mileage,
+        lifeKm: p.life_km,
+        lifeMonths: p.life_months
+      }))
+    }));
+  }
+  activeCarId = cars.length ? cars[0].id : null;
+  renderSwitcher();
+  renderCarSection();
+  renderMaintenanceSection();
 }
 
 function renderSwitcher(){
@@ -756,7 +782,7 @@ function renderSwitcher(){
     <button class="add-car-btn" onclick="toggleAddCar()">+</button>`;
   const el = document.getElementById('carSelect');
   el.innerHTML = cars.map(c=>`<option value="${c.id}" ${c.id===activeCarId?'selected':''}>${c.name} — ${c.plate}</option>`).join('');
-  el.addEventListener('change', (e)=>selectCar(Number(e.target.value)));
+  el.addEventListener('change', (e)=>selectCar(e.target.value));
 }
 
 function renderCarSection(){
@@ -906,26 +932,31 @@ function toggleAddCar(){
   renderCarSection();
 }
 
-function confirmAddCar(){
+async function confirmAddCar(){
   if(!addCar.name.trim() || !addCar.plate.trim()){
     alert('لازم اسم السيارة ورقم اللوحة على الأقل');
     return;
   }
-  const newId = Date.now();
-  cars.push({
-    id:newId,
+  const payload = {
     name: addCar.modelYear ? `${addCar.name.trim()} ${addCar.modelYear}` : addCar.name.trim(),
     plate: addCar.plate.trim(),
     color: addCar.color.trim() || '—',
     vin: addCar.vin.trim(),
     mileage: Number(addCar.mileage)||0,
-    purchaseDate: addCar.purchaseDate || null,
-    condition: addCar.condition,
-    parts: []
+    purchase_date: addCar.purchaseDate || null,
+    condition: addCar.condition
+  };
+  const { data, error } = await sb.from('cars').insert(payload).select().single();
+  if(error){
+    alert('تعذرت إضافة السيارة: ' + error.message);
+    return;
+  }
+  cars.push({
+    id:data.id, name:data.name, plate:data.plate, color:data.color, vin:data.vin,
+    mileage:data.mileage||0, purchaseDate:data.purchase_date, condition:data.condition, parts:[]
   });
-  activeCarId = newId;
+  activeCarId = data.id;
   addCar = {open:false, mode:'manual', name:'', modelYear:'', color:'', vin:'', plate:'', mileage:'', purchaseDate:'', condition:'new', formImageLoaded:false};
-  persistUsers();
   renderSwitcher();
   renderCarSection();
   renderMaintenanceSection();
@@ -947,11 +978,11 @@ function renderMaintenanceSection(){
     const color = st.cls==='ok'?'var(--green)':st.cls==='warn'?'var(--amber)':'var(--red)';
     const remainingKm = p.lifeKm ? Math.max(0, (p.lastMileage+p.lifeKm) - car.mileage) : null;
     const nextDate = computeNextDate(p);
-    const isEditing = editingPartRef===p.ref;
+    const isEditing = editingPartId===p.id;
 
     return `
-    <div class="part-card ${expandedParts.has(p.ref)?'expanded':''}">
-      <div class="part-top" onclick="togglePart('${p.ref}')">
+    <div class="part-card ${expandedParts.has(p.id)?'expanded':''}">
+      <div class="part-top" onclick="togglePart('${p.id}')">
         <div class="part-name-wrap">
           <div class="part-icon">${svgIcon(p.icon,'#E8A33D')}</div>
           <div>
@@ -961,8 +992,8 @@ function renderMaintenanceSection(){
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <div class="part-status ${st.cls}">${st.label}</div>
-          <div class="icon-btn" onclick="event.stopPropagation();openEditPart('${p.ref}')">${svgIcon('edit','currentColor')}</div>
-          <div class="icon-btn danger" onclick="event.stopPropagation();deletePart('${p.ref}', event)">${svgIcon('trash','currentColor')}</div>
+          <div class="icon-btn" onclick="event.stopPropagation();openEditPart('${p.id}')">${svgIcon('edit','currentColor')}</div>
+          <div class="icon-btn danger" onclick="event.stopPropagation();deletePart('${p.id}', event)">${svgIcon('trash','currentColor')}</div>
           <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
         </div>
       </div>
@@ -1134,7 +1165,7 @@ function updatePeriodicNext(field, value){
   addPart[field] = value;
 }
 
-function confirmAddPart(){
+async function confirmAddPart(){
   const car = cars.find(c=>c.id===activeCarId);
 
   if(addPart.mode==='periodic'){
@@ -1151,13 +1182,14 @@ function confirmAddPart(){
     const lifeKm = Math.max(1, Number(addPart.pNextKm) - Number(addPart.pLastKm));
     const lifeMonths = Math.max(1, Math.round((nextDate-lastDate)/(1000*60*60*24*30)));
     const ref = 'PERIODIC-'+Date.now().toString().slice(-5);
-    car.parts.push({
-      name:'الصيانة الدورية', ref, icon:'service', periodic:true,
-      lastDate:addPart.pLastDate, lastMileage:Number(addPart.pLastKm),
-      lifeKm, lifeMonths
-    });
+    const { data, error } = await sb.from('parts').insert({
+      car_id: car.id, name:'الصيانة الدورية', ref, icon:'service', periodic:true,
+      last_date:addPart.pLastDate, last_mileage:Number(addPart.pLastKm),
+      life_km:lifeKm, life_months:lifeMonths
+    }).select().single();
+    if(error){ alert('تعذرت إضافة الصيانة الدورية: ' + error.message); return; }
+    car.parts.push({id:data.id, name:data.name, ref:data.ref, icon:data.icon, periodic:data.periodic, lastDate:data.last_date, lastMileage:data.last_mileage, lifeKm:data.life_km, lifeMonths:data.life_months});
     addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
-    persistUsers();
     renderCarSection();
     renderMaintenanceSection();
     return;
@@ -1179,14 +1211,18 @@ function confirmAddPart(){
     ref = 'CUST-'+Date.now().toString().slice(-5);
   }
 
-  car.parts.push({name, ref, icon, lastDate:TODAY, lastMileage:car.mileage, lifeKm, lifeMonths});
+  const { data, error } = await sb.from('parts').insert({
+    car_id: car.id, name, ref, icon, periodic:false,
+    last_date:TODAY, last_mileage:car.mileage, life_km:lifeKm, life_months:lifeMonths
+  }).select().single();
+  if(error){ alert('تعذرت إضافة القطعة: ' + error.message); return; }
+  car.parts.push({id:data.id, name:data.name, ref:data.ref, icon:data.icon, periodic:data.periodic, lastDate:data.last_date, lastMileage:data.last_mileage, lifeKm:data.life_km, lifeMonths:data.life_months});
   addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
-  persistUsers();
   renderMaintenanceSection();
 }
 
-function togglePart(ref){
-  if(expandedParts.has(ref)) expandedParts.delete(ref); else expandedParts.add(ref);
+function togglePart(id){
+  if(expandedParts.has(id)) expandedParts.delete(id); else expandedParts.add(id);
   renderMaintenanceSection();
 }
 
@@ -1202,17 +1238,17 @@ function computeNextDate(p){
   return next.toISOString().slice(0,10);
 }
 
-function openEditPart(ref){
+function openEditPart(id){
   const car = cars.find(c=>c.id===activeCarId);
-  const p = car.parts.find(p=>p.ref===ref);
+  const p = car.parts.find(p=>p.id===id);
   if(!p) return;
-  editingPartRef = ref;
+  editingPartId = id;
   editForm = {name:p.name, lastDate:p.lastDate, nextDate:computeNextDate(p)};
   renderMaintenanceSection();
 }
 
 function closeEditPart(){
-  editingPartRef = null;
+  editingPartId = null;
   renderMaintenanceSection();
 }
 
@@ -1220,9 +1256,9 @@ function updateEditField(field, value){
   editForm[field] = value;
 }
 
-function saveEditPart(){
+async function saveEditPart(){
   const car = cars.find(c=>c.id===activeCarId);
-  const p = car.parts.find(p=>p.ref===editingPartRef);
+  const p = car.parts.find(p=>p.id===editingPartId);
   if(!p) return;
   if(!editForm.name.trim()){ alert('لازم اسم القطعة'); return; }
   const last = new Date(editForm.lastDate);
@@ -1232,31 +1268,46 @@ function saveEditPart(){
     return;
   }
   const months = Math.max(1, Math.round((next-last)/(1000*60*60*24*30)));
-  p.name = editForm.name.trim();
-  p.lastDate = editForm.lastDate;
+  const newName = editForm.name.trim();
+  const newLastDate = editForm.lastDate;
+
+  const { error } = await sb.from('parts').update({
+    name:newName, last_date:newLastDate, life_months:months, life_km:null
+  }).eq('id', p.id);
+  if(error){ alert('تعذر حفظ التعديل: ' + error.message); return; }
+
+  p.name = newName;
+  p.lastDate = newLastDate;
   p.lifeMonths = months;
   p.lifeKm = null;
-  editingPartRef = null;
-  persistUsers();
+  editingPartId = null;
   renderMaintenanceSection();
 }
 
-function deletePart(ref, evt){
+function deletePart(id, evt){
   if(evt) evt.stopPropagation();
   const car = cars.find(c=>c.id===activeCarId);
-  const idx = car.parts.findIndex(p=>p.ref===ref);
+  const idx = car.parts.findIndex(p=>p.id===id);
   if(idx===-1) return;
 
-  if(pendingDelete){ clearTimeout(pendingDelete.timeoutId); pendingDelete=null; }
+  if(pendingDelete){ clearTimeout(pendingDelete.timeoutId); finalizeDelete(); }
 
   const [removed] = car.parts.splice(idx,1);
-  if(editingPartRef===ref) editingPartRef=null;
-  expandedParts.delete(ref);
+  if(editingPartId===id) editingPartId=null;
+  expandedParts.delete(id);
   pendingDelete = {carId:car.id, part:removed, index:idx};
-  persistUsers();
   renderMaintenanceSection();
   showUndoBar(removed.name);
-  pendingDelete.timeoutId = setTimeout(()=>{ pendingDelete=null; hideUndoBar(); }, 15000);
+  pendingDelete.timeoutId = setTimeout(()=>{ finalizeDelete(); }, 15000);
+}
+
+async function finalizeDelete(){
+  if(!pendingDelete) return;
+  const { part } = pendingDelete;
+  pendingDelete = null;
+  hideUndoBar();
+  const { error } = await sb.from('parts').delete().eq('id', part.id);
+  if(error) console.error('تعذر حذف القطعة نهائيًا', error);
 }
 
 function undoDeletePart(){
@@ -1268,7 +1319,6 @@ function undoDeletePart(){
     car.parts.splice(idx,0,pendingDelete.part);
   }
   pendingDelete = null;
-  persistUsers();
   hideUndoBar();
   renderMaintenanceSection();
 }
@@ -1303,7 +1353,7 @@ function selectCar(id){
   activeCarId = id;
   expandedParts = new Set();
   addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
-  editingPartRef = null;
+  editingPartId = null;
   addCar.open = false;
   renderSwitcher();
   renderCarSection();
@@ -1321,19 +1371,14 @@ document.querySelectorAll('.nav-btn').forEach(b=>{
   b.addEventListener('click', ()=>selectTab(b.dataset.tab));
 });
 
-loadFromStorage();
-(function(){
-  let savedPhone = null;
-  try{ savedPhone = localStorage.getItem(SESSION_KEY); }catch(e){}
-  if(savedPhone && users[savedPhone]){
-    currentUser = savedPhone;
-    cars = users[savedPhone].cars;
-    activeCarId = cars.length ? cars[0].id : null;
+(async function initApp(){
+  const { data } = await sb.auth.getSession();
+  const session = data?.session;
+  if(session){
+    currentUser = session.user;
     document.getElementById('authScreen').style.display = 'none';
     document.getElementById('appShell').style.display = 'block';
-    renderSwitcher();
-    renderCarSection();
-    renderMaintenanceSection();
+    await loadCarsFromDB();
   } else {
     renderAuthScreen();
   }
