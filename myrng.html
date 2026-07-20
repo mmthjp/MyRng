@@ -642,7 +642,7 @@ let addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:''
 let editingPartId = null;
 let editForm = {name:'', lastDate:'', nextDate:''};
 let pendingDelete = null;
-let addCar = {open:false, mode:'manual', name:'', modelYear:'', color:'', vin:'', plate:'', mileage:'', purchaseDate:'', condition:'new', formImageLoaded:false};
+let addCar = {open:false, name:'', modelYear:'', color:'', vin:'', plate:'', mileage:'', purchaseDate:'', condition:'new'};
 
 const icons = {
   drop:'<path d="M12 2s7 8.5 7 13a7 7 0 11-14 0c0-4.5 7-13 7-13z"/>',
@@ -939,18 +939,6 @@ function renderAddCarPanel(){
   return `
     <div class="add-panel ${addCar.open?'open':''}">
       <div class="add-panel-inner">
-        <div class="mode-toggle">
-          <button class="mode-btn ${addCar.mode==='manual'?'active':''}" onclick="setAddCarMode('manual')">يدوي</button>
-          <button class="mode-btn ${addCar.mode==='form'?'active':''}" onclick="setAddCarMode('form')">عن طريق الاستمارة</button>
-        </div>
-
-        ${addCar.mode==='form' ? `
-        <div class="field-group">
-          <label class="field-label">صورة الاستمارة</label>
-          <input class="field-input" type="file" accept="image/*" onchange="handleFormImage(this)">
-          ${addCar.formImageLoaded ? '<div class="form-hint">✓ تم تعبئة البيانات من الاستمارة، راجعها وعدّل اللي يحتاج تعديل</div>' : ''}
-        </div>` : ''}
-
         <div class="field-group">
           <label class="field-label">اسم السيارة (الماركة والطراز)</label>
           <input class="field-input" type="text" value="${addCar.name}" oninput="updateAddCarField('name', this.value)" placeholder="مثال: تويوتا كامري">
@@ -995,11 +983,6 @@ function renderAddCarPanel(){
     </div>`;
 }
 
-function setAddCarMode(mode){
-  addCar.mode = mode;
-  renderCarSection();
-}
-
 function setCondition(cond){
   addCar.condition = cond;
   renderCarSection();
@@ -1009,23 +992,11 @@ function updateAddCarField(field, value){
   addCar[field] = value;
 }
 
-function handleFormImage(input){
-  if(!input.files || !input.files.length) return;
-  // معاينة تجريبية: القراءة الفعلية من الصورة تُفعّل لما نربط الـ API لاحقًا
-  addCar.formImageLoaded = true;
-  addCar.name = 'فولكس واجن تيرامونت';
-  addCar.modelYear = '2024';
-  addCar.color = 'أسود';
-  addCar.vin = 'WVGCD1CA9RC542233';
-  addCar.plate = '٨٩٦٥ ب د ي';
-  renderCarSection();
-}
-
 function toggleAddCar(){
   addCar.open = !addCar.open;
   if(addCar.open){
-    addCar.mode='manual'; addCar.name=''; addCar.modelYear=''; addCar.color=''; addCar.vin='';
-    addCar.plate=''; addCar.mileage=''; addCar.purchaseDate=''; addCar.condition='new'; addCar.formImageLoaded=false;
+    addCar.name=''; addCar.modelYear=''; addCar.color=''; addCar.vin='';
+    addCar.plate=''; addCar.mileage=''; addCar.purchaseDate=''; addCar.condition='new';
   }
   renderCarSection();
 }
@@ -1055,7 +1026,7 @@ async function confirmAddCar(){
     mileage:data.mileage||0, purchaseDate:data.purchase_date, condition:data.condition, parts:[]
   });
   activeCarId = data.id;
-  addCar = {open:false, mode:'manual', name:'', modelYear:'', color:'', vin:'', plate:'', mileage:'', purchaseDate:'', condition:'new', formImageLoaded:false};
+  addCar = {open:false, name:'', modelYear:'', color:'', vin:'', plate:'', mileage:'', purchaseDate:'', condition:'new'};
   renderSwitcher();
   renderCarSection();
   renderMaintenanceSection();
