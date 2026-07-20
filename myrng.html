@@ -267,6 +267,24 @@ body{
 .part-status.due{background:#E4614F22;color:var(--red);}
 
 .gauge{margin-top:14px;}
+.reminder-btn{
+  width:100%;
+  margin-top:12px;
+  padding:10px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  background:var(--surface-2);
+  color:var(--muted);
+  font-family:'Tajawal',sans-serif;
+  font-weight:700;
+  font-size:12.5px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  cursor:pointer;
+}
+.reminder-btn:active{background:var(--accent-dim);color:var(--accent);border-color:var(--accent);}
 .part-details{
   max-height:0;
   overflow:hidden;
@@ -620,7 +638,7 @@ const partsCatalog = [
 let activeCarId = null;
 let activeTab = 'car';
 let expandedParts = new Set();
-let addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
+let addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
 let editingPartId = null;
 let editForm = {name:'', lastDate:'', nextDate:''};
 let pendingDelete = null;
@@ -841,7 +859,8 @@ async function loadCarsFromDB(){
         lastDate: p.last_date,
         lastMileage: p.last_mileage,
         lifeKm: p.life_km,
-        lifeMonths: p.life_months
+        lifeMonths: p.life_months,
+        cost: p.cost
       }))
     }));
   }
@@ -1088,7 +1107,9 @@ function renderMaintenanceSection(){
           <div class="meta-row"><span>تاريخ الصيانة الأخير</span><b>${p.lastDate}</b></div>
           <div class="meta-row"><span>القادم</span><b>${nextDate}</b></div>
           ${remainingKm!==null ? `<div class="meta-row"><span>متبقي بالكيلومتر</span><b>${fmt(remainingKm)} كم</b></div>` : ''}
+          ${p.cost ? `<div class="meta-row"><span>${p.periodic?'تكلفة الصيانة الدورية':'سعر القطعة'}</span><b>${fmt(p.cost)} ريال</b></div>` : ''}
         </div>
+        <button class="reminder-btn" onclick="event.stopPropagation();sendReminder('${p.id}')">${svgIcon('service','currentColor')} إرسال تذكير للكالندر</button>
       </div>
       ${isEditing ? `
       <div class="add-panel open">
@@ -1158,6 +1179,10 @@ function renderAddPart(){
             <input class="field-input" type="date" value="${addPart.pNextDate}" oninput="updatePeriodicNext('pNextDate', this.value)">
           </div>
         </div>
+        <div class="field-group">
+          <label class="field-label">تكلفة الصيانة الدورية (ريال)</label>
+          <input class="field-input" type="number" value="${addPart.cost}" oninput="updateAddField('cost', this.value)" placeholder="اختياري">
+        </div>
         <button class="confirm-btn" onclick="confirmAddPart()">إضافة للسجل</button>
         <div class="form-hint">الاقتراح الافتراضي 6 أشهر أو 10,000 كم من آخر صيانة، وتقدر تعدله زي ما تبي</div>
         ` : `
@@ -1179,6 +1204,10 @@ function renderAddPart(){
             <label class="field-label">العمر بالأشهر</label>
             <input class="field-input" type="number" value="${addPart.months}" oninput="updateAddField('months', this.value)" placeholder="مثال: 12">
           </div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">سعر القطعة (ريال)</label>
+          <input class="field-input" type="number" value="${addPart.cost}" oninput="updateAddField('cost', this.value)" placeholder="اختياري">
         </div>
         <button class="confirm-btn" onclick="confirmAddPart()">إضافة للسجل</button>
         <div class="form-hint">تعبئة خانة وحدة تكفي، ونقطة البداية هي عداد السيارة الحالي وتاريخ اليوم.</div>
@@ -1262,14 +1291,15 @@ async function confirmAddPart(){
     const lifeKm = Math.max(1, Number(addPart.pNextKm) - Number(addPart.pLastKm));
     const lifeMonths = Math.max(1, Math.round((nextDate-lastDate)/(1000*60*60*24*30)));
     const ref = 'PERIODIC-'+Date.now().toString().slice(-5);
+    const cost = Number(addPart.cost)||null;
     const { data, error } = await sb.from('parts').insert({
       car_id: car.id, name:'الصيانة الدورية', ref, icon:'service', periodic:true,
       last_date:addPart.pLastDate, last_mileage:Number(addPart.pLastKm),
-      life_km:lifeKm, life_months:lifeMonths
+      life_km:lifeKm, life_months:lifeMonths, cost
     }).select().single();
     if(error){ alert('تعذرت إضافة الصيانة الدورية: ' + error.message); return; }
-    car.parts.push({id:data.id, name:data.name, ref:data.ref, icon:data.icon, periodic:data.periodic, lastDate:data.last_date, lastMileage:data.last_mileage, lifeKm:data.life_km, lifeMonths:data.life_months});
-    addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
+    car.parts.push({id:data.id, name:data.name, ref:data.ref, icon:data.icon, periodic:data.periodic, lastDate:data.last_date, lastMileage:data.last_mileage, lifeKm:data.life_km, lifeMonths:data.life_months, cost:data.cost});
+    addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
     renderCarSection();
     renderMaintenanceSection();
     return;
@@ -1293,11 +1323,11 @@ async function confirmAddPart(){
 
   const { data, error } = await sb.from('parts').insert({
     car_id: car.id, name, ref, icon, periodic:false,
-    last_date:TODAY, last_mileage:car.mileage, life_km:lifeKm, life_months:lifeMonths
+    last_date:TODAY, last_mileage:car.mileage, life_km:lifeKm, life_months:lifeMonths, cost:Number(addPart.cost)||null
   }).select().single();
   if(error){ alert('تعذرت إضافة القطعة: ' + error.message); return; }
-  car.parts.push({id:data.id, name:data.name, ref:data.ref, icon:data.icon, periodic:data.periodic, lastDate:data.last_date, lastMileage:data.last_mileage, lifeKm:data.life_km, lifeMonths:data.life_months});
-  addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
+  car.parts.push({id:data.id, name:data.name, ref:data.ref, icon:data.icon, periodic:data.periodic, lastDate:data.last_date, lastMileage:data.last_mileage, lifeKm:data.life_km, lifeMonths:data.life_months, cost:data.cost});
+  addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
   renderMaintenanceSection();
 }
 
@@ -1316,6 +1346,60 @@ function computeNextDate(p){
   const next = new Date(last);
   next.setMonth(next.getMonth()+months);
   return next.toISOString().slice(0,10);
+}
+
+function icsDate(dateStr){
+  const d = new Date(dateStr);
+  const p = n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}`;
+}
+
+function addDaysISO(dateStr, days){
+  const d = new Date(dateStr);
+  d.setDate(d.getDate()+days);
+  return d.toISOString().slice(0,10);
+}
+
+function sendReminder(id){
+  const car = cars.find(c=>c.id===activeCarId);
+  const p = car.parts.find(p=>p.id===id);
+  if(!p) return;
+
+  const nextDate = computeNextDate(p);
+  const dtStart = icsDate(nextDate);
+  const dtEnd = icsDate(addDaysISO(nextDate, 1));
+  const title = (p.periodic ? 'الصيانة الدورية' : p.name) + ' - ' + car.name;
+
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Myrng//AR',
+    'CALSCALE:GREGORIAN',
+    'BEGIN:VEVENT',
+    'UID:myrng-'+p.id+'@myrng.app',
+    'DTSTAMP:'+icsDate(TODAY)+'T000000Z',
+    'DTSTART;VALUE=DATE:'+dtStart,
+    'DTEND;VALUE=DATE:'+dtEnd,
+    'SUMMARY:'+title,
+    'DESCRIPTION:تذكير صيانة من تطبيق سياراتي',
+    'BEGIN:VALARM',
+    'TRIGGER:-P1D',
+    'ACTION:DISPLAY',
+    'DESCRIPTION:تذكير صيانة',
+    'END:VALARM',
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ].join('\r\n');
+
+  const blob = new Blob([ics], {type:'text/calendar;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (p.periodic ? 'الصيانة-الدورية' : p.name) + '.ics';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 5000);
 }
 
 function openEditPart(id){
@@ -1432,7 +1516,7 @@ function hideUndoBar(){
 function selectCar(id){
   activeCarId = id;
   expandedParts = new Set();
-  addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
+  addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
   editingPartId = null;
   addCar.open = false;
   renderSwitcher();
