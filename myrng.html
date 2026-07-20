@@ -590,8 +590,9 @@ let cars = [];
 let currentUser = null;
 let auth = {mode:'login', phone:'', password:'', confirmPassword:'', error:'', loading:false};
 
-function phoneToEmail(localPhone){
-  return 'myrng.' + localPhone + '@gmail.com';
+async function hashPin(pin){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin+'myrng_salt'));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
 const TODAY = '2026-07-17';
@@ -728,16 +729,16 @@ function renderAuthScreen(){
           <input class="field-input" type="tel" inputmode="numeric" value="${auth.phone}" oninput="updateAuthField('phone', this.value)" placeholder="0505350000" maxlength="10">
         </div>
         <div class="field-group">
-          <label class="field-label">الرمز (6 أرقام)</label>
-          <input class="field-input" type="password" inputmode="numeric" value="${auth.password}" oninput="updateAuthField('password', this.value)" placeholder="••••••" maxlength="6">
+          <label class="field-label">الرمز (5 أرقام)</label>
+          <input class="field-input" type="password" inputmode="numeric" value="${auth.password}" oninput="updateAuthField('password', this.value)" placeholder="•••••" maxlength="5">
         </div>
         ${!isLogin ? `
         <div class="field-group">
           <label class="field-label">تأكيد الرمز</label>
-          <input class="field-input" type="password" inputmode="numeric" value="${auth.confirmPassword}" oninput="updateAuthField('confirmPassword', this.value)" placeholder="••••••" maxlength="6">
+          <input class="field-input" type="password" inputmode="numeric" value="${auth.confirmPassword}" oninput="updateAuthField('confirmPassword', this.value)" placeholder="•••••" maxlength="5">
         </div>` : ''}
         <button class="confirm-btn" onclick="submitAuth()" ${auth.loading?'disabled':''}>${auth.loading ? 'جاري التحقق...' : (isLogin?'دخول':'إنشاء حساب')}</button>
-        <div class="form-hint">الرمز 6 أرقام، وما يكون متسلسل زي 123456 أو 654321</div>
+        <div class="form-hint">الرمز 5 أرقام</div>
       </div>
     </div>`;
   applyTheme();
@@ -753,73 +754,71 @@ function updateAuthField(field, value){
   auth[field] = toEnglishDigits(value);
 }
 
-function translateAuthError(msg){
-  if(/Invalid login credentials/i.test(msg)) return 'اسم المستخدم أو الرمز غير صحيح';
-  if(/already registered|already exists/i.test(msg)) return 'اسم المستخدم مسجل من قبل، سجل دخول بدل ما تنشئ حساب';
-  if(/Password should be at least/i.test(msg)) return 'الرمز قصير حسب إعدادات الحساب';
-  if(/Email not confirmed/i.test(msg)) return 'لازم تعطّل "Confirm email" من إعدادات Supabase (Authentication → Providers → Email)';
-  if(/rate limit/i.test(msg)) return 'محاولات كثيرة، جرب بعد شوي';
-  return msg;
-}
-
 async function submitAuth(){
-  const localPhone = auth.phone;
-  const password = auth.password;
+  const phone = auth.phone;
+  const pin = auth.password;
 
-  if(localPhone.length!==10 || !localPhone.startsWith('05')){
+  if(phone.length!==10 || !phone.startsWith('05')){
     auth.error = 'اسم المستخدم لازم يكون رقم جوال 10 أرقام ويبدأ بـ 05';
     renderAuthScreen(); return;
   }
-  if(password.length!==6){
-    auth.error = 'الرمز لازم يكون 6 أرقام بالضبط';
+  if(pin.length!==5){
+    auth.error = 'الرمز لازم يكون 5 أرقام بالضبط';
     renderAuthScreen(); return;
   }
-  if(password==='123456' || password==='654321'){
-    auth.error = 'ما تقدر تستخدم رمز متسلسل زي 123456 أو 654321';
-    renderAuthScreen(); return;
-  }
-  if(auth.mode==='signup' && password!==auth.confirmPassword){
+  if(auth.mode==='signup' && pin!==auth.confirmPassword){
     auth.error = 'تأكيد الرمز مو مطابق';
     renderAuthScreen(); return;
   }
 
-  const email = phoneToEmail(localPhone);
   auth.error = '';
   auth.loading = true;
   renderAuthScreen();
 
-  const result = auth.mode==='signup'
-    ? await sb.auth.signUp({ email, password, options:{ data:{ phone:localPhone } } })
-    : await sb.auth.signInWithPassword({ email, password });
+  const hash = await hashPin(pin);
+  let user, error;
 
-  auth.loading = false;
-
-  if(result.error){
-    auth.error = translateAuthError(result.error.message);
-    renderAuthScreen();
-    return;
+  if(auth.mode==='signup'){
+    const res = await sb.from('users').insert({phone, pin_hash:hash}).select().single();
+    user = res.data; error = res.error;
+    if(error){
+      auth.loading = false;
+      auth.error = error.code==='23505' ? 'اسم المستخدم مسجل من قبل، سجل دخول بدل ما تنشئ حساب' : ('خطأ: ' + error.message);
+      renderAuthScreen();
+      return;
+    }
+  } else {
+    const res = await sb.from('users').select('*').eq('phone', phone).eq('pin_hash', hash).single();
+    user = res.data; error = res.error;
+    if(error || !user){
+      auth.loading = false;
+      auth.error = 'اسم المستخدم أو الرمز غير صحيح';
+      renderAuthScreen();
+      return;
+    }
   }
 
-  currentUser = result.data.user;
+  currentUser = user;
   auth = {mode:'login', phone:'', password:'', confirmPassword:'', error:'', loading:false};
+  try{ localStorage.setItem('myrng_user', JSON.stringify({id:user.id, phone:user.phone})); }catch(e){}
 
   document.getElementById('authScreen').style.display = 'none';
   document.getElementById('appShell').style.display = 'block';
   await loadCarsFromDB();
 }
 
-async function logout(){
-  await sb.auth.signOut();
+function logout(){
   currentUser = null;
   cars = [];
   activeCarId = null;
+  try{ localStorage.removeItem('myrng_user'); }catch(e){}
   document.getElementById('appShell').style.display = 'none';
   document.getElementById('authScreen').style.display = 'block';
   renderAuthScreen();
 }
 
 async function loadCarsFromDB(){
-  const { data, error } = await sb.from('cars').select('*, parts(*)').order('created_at', {ascending:true});
+  const { data, error } = await sb.from('cars').select('*, parts(*)').eq('user_id', currentUser.id).order('created_at', {ascending:true});
   if(error){
     console.error('تعذر تحميل السيارات', error);
     cars = [];
@@ -1018,6 +1017,7 @@ async function confirmAddCar(){
     return;
   }
   const payload = {
+    user_id: currentUser.id,
     name: addCar.modelYear ? `${addCar.name.trim()} ${addCar.modelYear}` : addCar.name.trim(),
     plate: addCar.plate.trim(),
     color: addCar.color.trim() || '—',
@@ -1453,10 +1453,10 @@ document.querySelectorAll('.nav-btn').forEach(b=>{
 
 (async function initApp(){
   initTheme();
-  const { data } = await sb.auth.getSession();
-  const session = data?.session;
-  if(session){
-    currentUser = session.user;
+  let saved = null;
+  try{ saved = JSON.parse(localStorage.getItem('myrng_user')||'null'); }catch(e){}
+  if(saved && saved.id){
+    currentUser = saved;
     document.getElementById('authScreen').style.display = 'none';
     document.getElementById('appShell').style.display = 'block';
     await loadCarsFromDB();
