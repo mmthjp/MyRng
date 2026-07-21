@@ -944,7 +944,10 @@ function renderCarSection(){
           <h2>${car.name}</h2>
           <div class="sub">${car.color} · لوحة ${car.plate}</div>
         </div>
-        <div class="icon">${svgIcon('tire','#E63946')}</div>
+        <div style="display:flex;gap:8px;">
+          <div class="icon-btn" onclick="openEditCar()">${svgIcon('edit','currentColor')}</div>
+          <div class="icon">${svgIcon('tire','#E63946')}</div>
+        </div>
       </div>
       <div class="odometer">
         <span class="label">قراءة العداد الحالية</span>
@@ -957,9 +960,102 @@ function renderCarSection(){
         <div class="info-item"><div class="k">تاريخ الشراء</div><div class="v">${car.purchaseDate || '—'}</div></div>
         <div class="info-item"><div class="k">الحالة عند الشراء</div><div class="v">${car.condition==='used'?'مستعملة':'جديدة'}</div></div>
       </div>
-    </div>`;
+    </div>
+    ${renderEditCarPanel(car)}`;
   }
   el.innerHTML = html;
+}
+
+let editingCar = false;
+let editCarForm = {name:'', plate:'', color:'', vin:'', mileage:'', purchaseDate:'', condition:'new'};
+
+function openEditCar(){
+  const car = cars.find(c=>c.id===activeCarId);
+  if(!car) return;
+  editingCar = true;
+  editCarForm = {name:car.name, plate:car.plate, color:car.color, vin:car.vin||'', mileage:car.mileage, purchaseDate:car.purchaseDate||'', condition:car.condition||'new'};
+  renderCarSection();
+}
+
+function closeEditCar(){
+  editingCar = false;
+  renderCarSection();
+}
+
+function updateEditCarField(field, value){
+  editCarForm[field] = value;
+}
+
+function renderEditCarPanel(car){
+  if(!editingCar) return '';
+  return `
+    <div class="add-panel open" style="margin-top:14px;">
+      <div class="add-panel-inner">
+        <div class="field-group">
+          <label class="field-label">اسم السيارة</label>
+          <input class="field-input" type="text" value="${editCarForm.name}" oninput="updateEditCarField('name', this.value)">
+        </div>
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">اللون</label>
+            <input class="field-input" type="text" value="${editCarForm.color}" oninput="updateEditCarField('color', this.value)">
+          </div>
+          <div class="field-group">
+            <label class="field-label">رقم اللوحة</label>
+            <input class="field-input" type="text" value="${editCarForm.plate}" oninput="updateEditCarField('plate', this.value)">
+          </div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">رقم الهيكل</label>
+          <input class="field-input" type="text" value="${editCarForm.vin}" oninput="updateEditCarField('vin', this.value)">
+        </div>
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">قراءة العداد الحالية (كم)</label>
+            <input class="field-input" type="number" value="${editCarForm.mileage}" oninput="updateEditCarField('mileage', this.value)">
+          </div>
+          <div class="field-group">
+            <label class="field-label">تاريخ الشراء</label>
+            <input class="field-input" type="date" value="${editCarForm.purchaseDate}" oninput="updateEditCarField('purchaseDate', this.value)">
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="confirm-btn btn-secondary" onclick="closeEditCar()">إلغاء</button>
+          <button class="confirm-btn" onclick="saveEditCar()">حفظ</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function saveEditCar(){
+  const car = cars.find(c=>c.id===activeCarId);
+  if(!car) return;
+  if(!editCarForm.name.trim() || !editCarForm.plate.trim()){
+    alert('لازم اسم السيارة ورقم اللوحة على الأقل');
+    return;
+  }
+  const payload = {
+    name: editCarForm.name.trim(),
+    plate: editCarForm.plate.trim(),
+    color: editCarForm.color.trim() || '—',
+    vin: editCarForm.vin.trim(),
+    mileage: Number(editCarForm.mileage)||0,
+    purchase_date: editCarForm.purchaseDate || null
+  };
+  const { error } = await sb.from('cars').update(payload).eq('id', car.id);
+  if(error){ alert('تعذر حفظ التعديل: ' + error.message); return; }
+
+  car.name = payload.name;
+  car.plate = payload.plate;
+  car.color = payload.color;
+  car.vin = payload.vin;
+  car.mileage = payload.mileage;
+  car.purchaseDate = payload.purchase_date;
+
+  editingCar = false;
+  renderSwitcher();
+  renderCarSection();
+  renderMaintenanceSection();
 }
 
 function renderAddCarPanel(){
@@ -1664,6 +1760,7 @@ function selectCar(id){
   addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', serviceDate:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:'', ncName:'', ncDate:'', ncCost:'', ncWarranty:false};
   editingPartId = null;
   addCar.open = false;
+  editingCar = false;
   renderSwitcher();
   renderCarSection();
   renderMaintenanceSection();
