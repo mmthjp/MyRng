@@ -285,6 +285,27 @@ body{
   cursor:pointer;
 }
 .reminder-btn:active{background:var(--accent-dim);color:var(--accent);border-color:var(--accent);}
+.section-label{
+  font-family:'Almarai',sans-serif;
+  font-weight:800;
+  font-size:14px;
+  color:var(--muted);
+  margin:20px 0 12px;
+  padding-top:16px;
+  border-top:1px solid var(--border);
+}
+.warranty-badge{
+  font-size:11px;
+  font-weight:700;
+  padding:5px 10px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background:var(--surface-2);
+  color:var(--muted);
+  cursor:pointer;
+  white-space:nowrap;
+}
+.warranty-badge.yes{background:#4FBE8A22;color:var(--green);border-color:#4FBE8A55;}
 .part-details{
   max-height:0;
   overflow:hidden;
@@ -642,9 +663,9 @@ const partsCatalog = [
 let activeCarId = null;
 let activeTab = 'car';
 let expandedParts = new Set();
-let addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
+let addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', serviceDate:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:'', ncName:'', ncDate:'', ncCost:'', ncWarranty:false};
 let editingPartId = null;
-let editForm = {name:'', lastDate:'', nextDate:''};
+let editForm = {name:'', lastDate:'', nextDate:'', cost:''};
 let pendingDelete = null;
 let addCar = {open:false, name:'', modelYear:'', color:'', vin:'', plate:'', mileage:'', purchaseDate:'', condition:'new'};
 
@@ -860,6 +881,8 @@ async function loadCarsFromDB(){
         ref: p.ref,
         icon: p.icon,
         periodic: p.periodic,
+        nonConsumable: p.non_consumable,
+        underWarranty: p.under_warranty,
         lastDate: p.last_date,
         lastMileage: p.last_mileage,
         lifeKm: p.life_km,
@@ -1044,8 +1067,11 @@ function renderMaintenanceSection(){
     return;
   }
 
+  const consumableParts = car.parts.filter(p=>!p.nonConsumable);
+  const nonConsumableParts = car.parts.filter(p=>p.nonConsumable);
+
   let ok=0,warn=0,due=0;
-  const cards = car.parts.map(p=>{
+  const cards = consumableParts.map(p=>{
     const pct = computePercent(p, car);
     const st = statusFromPct(pct);
     if(st.cls==='ok') ok++; else if(st.cls==='warn') warn++; else due++;
@@ -1103,6 +1129,61 @@ function renderMaintenanceSection(){
               <input class="field-input" type="date" value="${editForm.nextDate}" oninput="updateEditField('nextDate', this.value)">
             </div>
           </div>
+          <div class="field-group">
+            <label class="field-label">السعر (ريال)</label>
+            <input class="field-input" type="number" value="${editForm.cost}" oninput="updateEditField('cost', this.value)" placeholder="اختياري">
+          </div>
+          <div class="btn-row">
+            <button class="confirm-btn btn-secondary" onclick="closeEditPart()">إلغاء</button>
+            <button class="confirm-btn" onclick="saveEditPart()">حفظ</button>
+          </div>
+        </div>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+
+  const nonConCards = nonConsumableParts.map(p=>{
+    const isEditing = editingPartId===p.id;
+    return `
+    <div class="part-card ${expandedParts.has(p.id)?'expanded':''}">
+      <div class="part-top" onclick="togglePart('${p.id}')">
+        <div class="part-name-wrap">
+          <div class="part-icon">${svgIcon(p.icon,'#E63946')}</div>
+          <div>
+            <div class="part-name">${p.name}</div>
+            <div class="part-ref">مرجع ${p.ref}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button class="warranty-badge ${p.underWarranty?'yes':'no'}" onclick="event.stopPropagation();toggleWarranty('${p.id}')">${p.underWarranty?'✓ تحت الضمان':'خارج الضمان'}</button>
+          <div class="icon-btn" onclick="event.stopPropagation();openEditPart('${p.id}')">${svgIcon('edit','currentColor')}</div>
+          <div class="icon-btn danger" onclick="event.stopPropagation();deletePart('${p.id}', event)">${svgIcon('trash','currentColor')}</div>
+          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+      </div>
+      <div class="part-details">
+        <div class="part-meta">
+          <div class="meta-row"><span>تاريخ الصيانة</span><b>${p.lastDate}</b></div>
+          ${p.cost ? `<div class="meta-row"><span>التكلفة</span><b>${fmt(p.cost)} ريال</b></div>` : ''}
+        </div>
+      </div>
+      ${isEditing ? `
+      <div class="add-panel open">
+        <div class="add-panel-inner">
+          <div class="field-group">
+            <label class="field-label">اسم القطعة</label>
+            <input class="field-input" type="text" value="${editForm.name}" oninput="updateEditField('name', this.value)">
+          </div>
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label">تاريخ الصيانة</label>
+              <input class="field-input" type="date" value="${editForm.lastDate}" oninput="updateEditField('lastDate', this.value)">
+            </div>
+            <div class="field-group">
+              <label class="field-label">التكلفة (ريال)</label>
+              <input class="field-input" type="number" value="${editForm.cost}" oninput="updateEditField('cost', this.value)" placeholder="اختياري">
+            </div>
+          </div>
           <div class="btn-row">
             <button class="confirm-btn btn-secondary" onclick="closeEditPart()">إلغاء</button>
             <button class="confirm-btn" onclick="saveEditPart()">حفظ</button>
@@ -1119,7 +1200,19 @@ function renderMaintenanceSection(){
       <div class="box"><div class="num due">${due}</div><div class="lbl">مستحقة</div></div>
     </div>
     ${renderAddPart()}
-    ${cards}`;
+    ${cards}
+    ${nonConsumableParts.length ? `<div class="section-label">قطع غير استهلاكية</div>${nonConCards}` : ''}`;
+}
+
+async function toggleWarranty(id){
+  const car = cars.find(c=>c.id===activeCarId);
+  const p = car.parts.find(p=>p.id===id);
+  if(!p) return;
+  const newVal = !p.underWarranty;
+  const { error } = await sb.from('parts').update({ under_warranty:newVal }).eq('id', p.id);
+  if(error){ alert('تعذر تحديث الضمان: ' + error.message); return; }
+  p.underWarranty = newVal;
+  renderMaintenanceSection();
 }
 
 function renderAddPart(){
@@ -1131,7 +1224,10 @@ function renderAddPart(){
         <div class="mode-toggle">
           <button class="mode-btn ${addPart.mode==='catalog'?'active':''}" onclick="setAddMode('catalog')">من القائمة</button>
           <button class="mode-btn ${addPart.mode==='custom'?'active':''}" onclick="setAddMode('custom')">يدوي</button>
+        </div>
+        <div class="mode-toggle" style="margin-top:8px;">
           <button class="mode-btn ${addPart.mode==='periodic'?'active':''}" onclick="setAddMode('periodic')">صيانة دورية</button>
+          <button class="mode-btn ${addPart.mode==='noncon'?'active':''}" onclick="setAddMode('noncon')">غير استهلاكية</button>
         </div>
         ${addPart.mode==='periodic' ? `
         <div class="field-row">
@@ -1160,6 +1256,30 @@ function renderAddPart(){
         </div>
         <button class="confirm-btn" onclick="confirmAddPart()">إضافة للسجل</button>
         <div class="form-hint">الاقتراح الافتراضي 6 أشهر أو 10,000 كم من آخر صيانة، وتقدر تعدله زي ما تبي</div>
+        ` : addPart.mode==='noncon' ? `
+        <div class="field-group">
+          <label class="field-label">اسم القطعة</label>
+          <input class="field-input" type="text" value="${addPart.ncName}" oninput="updateAddField('ncName', this.value)" placeholder="مثال: الرديتر">
+        </div>
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">تاريخ الصيانة</label>
+            <input class="field-input" type="date" value="${addPart.ncDate}" oninput="updateAddField('ncDate', this.value)">
+          </div>
+          <div class="field-group">
+            <label class="field-label">التكلفة (ريال)</label>
+            <input class="field-input" type="number" value="${addPart.ncCost}" oninput="updateAddField('ncCost', this.value)" placeholder="اختياري">
+          </div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">تحت الضمان؟</label>
+          <div class="mode-toggle">
+            <button class="mode-btn ${addPart.ncWarranty?'active':''}" onclick="setNcWarranty(true)">نعم</button>
+            <button class="mode-btn ${!addPart.ncWarranty?'active':''}" onclick="setNcWarranty(false)">لا</button>
+          </div>
+        </div>
+        <button class="confirm-btn" onclick="confirmAddPart()">إضافة للسجل</button>
+        <div class="form-hint">قطع غير استهلاكية (مثل الرديتر): نتابع تاريخ آخر صيانة وتكلفتها بدون جدولة القادمة</div>
         ` : `
         ${addPart.mode==='catalog' ? `
         <div class="field-group">
@@ -1170,6 +1290,10 @@ function renderAddPart(){
           <label class="field-label">اسم القطعة</label>
           <input class="field-input" type="text" value="${addPart.name}" oninput="updateAddField('name', this.value)" placeholder="مثال: مقص أمامي يمين">
         </div>`}
+        <div class="field-group">
+          <label class="field-label">تاريخ الصيانة</label>
+          <input class="field-input" type="date" value="${addPart.serviceDate}" oninput="updateAddField('serviceDate', this.value)">
+        </div>
         <div class="field-row">
           <div class="field-group">
             <label class="field-label">العمر بالكيلومتر</label>
@@ -1185,7 +1309,7 @@ function renderAddPart(){
           <input class="field-input" type="number" value="${addPart.cost}" oninput="updateAddField('cost', this.value)" placeholder="اختياري">
         </div>
         <button class="confirm-btn" onclick="confirmAddPart()">إضافة للسجل</button>
-        <div class="form-hint">تعبئة خانة وحدة تكفي، ونقطة البداية هي عداد السيارة الحالي وتاريخ اليوم.</div>
+        <div class="form-hint">تعبئة خانة وحدة تكفي، ونقطة البداية هي عداد السيارة الحالي.</div>
         `}
       </div>
     </div>`;
@@ -1203,11 +1327,13 @@ function toggleAddPanel(){
   if(addPart.open){
     const cat = partsCatalog.find(c=>c.id===addPart.catalogId);
     const car = cars.find(c=>c.id===activeCarId);
-    addPart.mode='catalog'; addPart.name=''; addPart.km=cat.lifeKm||''; addPart.months=cat.lifeMonths||'';
+    addPart.mode='catalog'; addPart.name=''; addPart.km=cat.lifeKm||''; addPart.months=cat.lifeMonths||''; addPart.cost='';
+    addPart.serviceDate = TODAY;
     addPart.pLastDate = TODAY;
     addPart.pLastKm = car ? car.mileage : '';
     addPart.pNextKm = addPart.pLastKm ? Number(addPart.pLastKm)+10000 : '';
     addPart.pNextDate = addMonthsToDate(TODAY, 6);
+    addPart.ncName=''; addPart.ncDate=TODAY; addPart.ncCost=''; addPart.ncWarranty=false;
   }
   renderMaintenanceSection();
 }
@@ -1234,6 +1360,11 @@ function updateAddField(field, value){
   addPart[field] = value;
 }
 
+function setNcWarranty(val){
+  addPart.ncWarranty = val;
+  renderMaintenanceSection();
+}
+
 function updatePeriodicLast(field, value){
   addPart[field] = value;
   if(field==='pLastKm' && value){
@@ -1251,6 +1382,23 @@ function updatePeriodicNext(field, value){
 
 async function confirmAddPart(){
   const car = cars.find(c=>c.id===activeCarId);
+
+  if(addPart.mode==='noncon'){
+    const name = addPart.ncName.trim();
+    if(!name){ alert('لازم تكتب اسم القطعة'); return; }
+    if(!addPart.ncDate){ alert('لازم تاريخ الصيانة'); return; }
+    const ref = 'NC-'+Date.now().toString().slice(-5);
+    const { data, error } = await sb.from('parts').insert({
+      car_id: car.id, name, ref, icon:'custom', periodic:false, non_consumable:true,
+      last_date:addPart.ncDate, last_mileage:car.mileage, life_km:null, life_months:null,
+      cost:Number(addPart.ncCost)||null, under_warranty:addPart.ncWarranty
+    }).select().single();
+    if(error){ alert('تعذرت إضافة القطعة: ' + error.message); return; }
+    car.parts.push({id:data.id, name:data.name, ref:data.ref, icon:data.icon, periodic:false, nonConsumable:true, lastDate:data.last_date, lastMileage:data.last_mileage, lifeKm:null, lifeMonths:null, cost:data.cost, underWarranty:data.under_warranty});
+    addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', serviceDate:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:'', ncName:'', ncDate:'', ncCost:'', ncWarranty:false};
+    renderMaintenanceSection();
+    return;
+  }
 
   if(addPart.mode==='periodic'){
     if(!addPart.pLastDate || !addPart.pLastKm || !addPart.pNextDate || !addPart.pNextKm){
@@ -1274,7 +1422,7 @@ async function confirmAddPart(){
     }).select().single();
     if(error){ alert('تعذرت إضافة الصيانة الدورية: ' + error.message); return; }
     car.parts.push({id:data.id, name:data.name, ref:data.ref, icon:data.icon, periodic:data.periodic, lastDate:data.last_date, lastMileage:data.last_mileage, lifeKm:data.life_km, lifeMonths:data.life_months, cost:data.cost});
-    addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
+    addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', serviceDate:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:'', ncName:'', ncDate:'', ncCost:'', ncWarranty:false};
     renderCarSection();
     renderMaintenanceSection();
     return;
@@ -1296,13 +1444,14 @@ async function confirmAddPart(){
     ref = 'CUST-'+Date.now().toString().slice(-5);
   }
 
+  const serviceDate = addPart.serviceDate || TODAY;
   const { data, error } = await sb.from('parts').insert({
     car_id: car.id, name, ref, icon, periodic:false,
-    last_date:TODAY, last_mileage:car.mileage, life_km:lifeKm, life_months:lifeMonths, cost:Number(addPart.cost)||null
+    last_date:serviceDate, last_mileage:car.mileage, life_km:lifeKm, life_months:lifeMonths, cost:Number(addPart.cost)||null
   }).select().single();
   if(error){ alert('تعذرت إضافة القطعة: ' + error.message); return; }
   car.parts.push({id:data.id, name:data.name, ref:data.ref, icon:data.icon, periodic:data.periodic, lastDate:data.last_date, lastMileage:data.last_mileage, lifeKm:data.life_km, lifeMonths:data.life_months, cost:data.cost});
-  addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
+  addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', serviceDate:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:'', ncName:'', ncDate:'', ncCost:'', ncWarranty:false};
   renderMaintenanceSection();
 }
 
@@ -1382,7 +1531,11 @@ function openEditPart(id){
   const p = car.parts.find(p=>p.id===id);
   if(!p) return;
   editingPartId = id;
-  editForm = {name:p.name, lastDate:p.lastDate, nextDate:computeNextDate(p)};
+  if(p.nonConsumable){
+    editForm = {name:p.name, lastDate:p.lastDate, nextDate:'', cost:p.cost||''};
+  } else {
+    editForm = {name:p.name, lastDate:p.lastDate, nextDate:computeNextDate(p), cost:p.cost||''};
+  }
   renderMaintenanceSection();
 }
 
@@ -1400,6 +1553,23 @@ async function saveEditPart(){
   const p = car.parts.find(p=>p.id===editingPartId);
   if(!p) return;
   if(!editForm.name.trim()){ alert('لازم اسم القطعة'); return; }
+  const newName = editForm.name.trim();
+  const cost = Number(editForm.cost)||null;
+
+  if(p.nonConsumable){
+    if(!editForm.lastDate){ alert('لازم تاريخ الصيانة'); return; }
+    const { error } = await sb.from('parts').update({
+      name:newName, last_date:editForm.lastDate, cost
+    }).eq('id', p.id);
+    if(error){ alert('تعذر حفظ التعديل: ' + error.message); return; }
+    p.name = newName;
+    p.lastDate = editForm.lastDate;
+    p.cost = cost;
+    editingPartId = null;
+    renderMaintenanceSection();
+    return;
+  }
+
   const last = new Date(editForm.lastDate);
   const next = new Date(editForm.nextDate);
   if(isNaN(last) || isNaN(next) || next<=last){
@@ -1407,11 +1577,10 @@ async function saveEditPart(){
     return;
   }
   const months = Math.max(1, Math.round((next-last)/(1000*60*60*24*30)));
-  const newName = editForm.name.trim();
   const newLastDate = editForm.lastDate;
 
   const { error } = await sb.from('parts').update({
-    name:newName, last_date:newLastDate, life_months:months, life_km:null
+    name:newName, last_date:newLastDate, life_months:months, life_km:null, cost
   }).eq('id', p.id);
   if(error){ alert('تعذر حفظ التعديل: ' + error.message); return; }
 
@@ -1419,6 +1588,7 @@ async function saveEditPart(){
   p.lastDate = newLastDate;
   p.lifeMonths = months;
   p.lifeKm = null;
+  p.cost = cost;
   editingPartId = null;
   renderMaintenanceSection();
 }
@@ -1491,7 +1661,7 @@ function hideUndoBar(){
 function selectCar(id){
   activeCarId = id;
   expandedParts = new Set();
-  addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:''};
+  addPart = {open:false, mode:'catalog', catalogId:partsCatalog[0].id, name:'', km:'', months:'', cost:'', serviceDate:'', pLastKm:'', pLastDate:'', pNextKm:'', pNextDate:'', ncName:'', ncDate:'', ncCost:'', ncWarranty:false};
   editingPartId = null;
   addCar.open = false;
   renderSwitcher();
